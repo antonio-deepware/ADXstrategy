@@ -22,18 +22,9 @@
 //--- inputs for expert
 input string             Expert_Title         ="ADXstrategy"; // Document name
 ulong                    Expert_MagicNumber   =26860;         //
-bool                     Expert_EveryTick     =false;         //
-//--- inputs for main signal
-input int                Signal_ThresholdOpen =10;            // Signal threshold value to open [0...100]
-input int                Signal_ThresholdClose=10;            // Signal threshold value to close [0...100]
-input double             Signal_PriceLevel    =0.0;           // Price level to execute a deal
-input double             Signal_StopLevel     =50.0;          // Stop Loss level (in points)
-input double             Signal_TakeLevel     =50.0;          // Take Profit level (in points)
-input int                Signal_Expiration    =4;             // Expiration of pending orders (in bars)
-input int                Signal_CCI_PeriodCCI =20;            // Commodity Channel Index(20,...) Period of calculation
-input ENUM_APPLIED_PRICE Signal_CCI_Applied   =PRICE_CLOSE;   // Commodity Channel Index(20,...) Prices series
-input double             Signal_CCI_Weight    =1.0;           // Commodity Channel Index(20,...) Weight [0...1.0]
+
 //--- inputs for money
+input group "Money";
 input double             Money_FixLot_Percent =10.0;          // Percent
 input double             Money_FixLot_Lots    =0.1;           // Fixed volume
 input group "Custom Parameters";
@@ -66,111 +57,22 @@ int cci_handle;
 int slow_ma_handle;
 int fast_ma_handle;
 
+
+
 //+------------------------------------------------------------------+
 //| Initialization function of the expert                            |
 //+------------------------------------------------------------------+
 int OnInit()
   {
-//--- Initializing expert
-   if(!ExtExpert.Init(Symbol(),Period(),Expert_EveryTick,Expert_MagicNumber))
-     {
-      //--- failed
-      printf(__FUNCTION__+": error initializing expert");
-      ExtExpert.Deinit();
-      return(INIT_FAILED);
-     }
-//--- Creating signal
-   CExpertSignal *signal=new CExpertSignal;
-   if(signal==NULL)
-     {
-      //--- failed
-      printf(__FUNCTION__+": error creating signal");
-      ExtExpert.Deinit();
-      return(INIT_FAILED);
-     }
-//---
-   ExtExpert.InitSignal(signal);
-   signal.ThresholdOpen(Signal_ThresholdOpen);
-   signal.ThresholdClose(Signal_ThresholdClose);
-   signal.PriceLevel(Signal_PriceLevel);
-   signal.StopLevel(Signal_StopLevel);
-   signal.TakeLevel(Signal_TakeLevel);
-   signal.Expiration(Signal_Expiration);
-//--- Creating filter CSignalCCI
-   CSignalCCI *filter0=new CSignalCCI;
-   if(filter0==NULL)
-     {
-      //--- failed
-      printf(__FUNCTION__+": error creating filter0");
-      ExtExpert.Deinit();
-      return(INIT_FAILED);
-     }
-   signal.AddFilter(filter0);
-//--- Set filter parameters
-   filter0.PeriodCCI(Signal_CCI_PeriodCCI);
-   filter0.Applied(Signal_CCI_Applied);
-   filter0.Weight(Signal_CCI_Weight);
-//--- Creation of trailing object
-   CTrailingNone *trailing=new CTrailingNone;
-   if(trailing==NULL)
-     {
-      //--- failed
-      printf(__FUNCTION__+": error creating trailing");
-      ExtExpert.Deinit();
-      return(INIT_FAILED);
-     }
-//--- Add trailing to expert (will be deleted automatically))
-   if(!ExtExpert.InitTrailing(trailing))
-     {
-      //--- failed
-      printf(__FUNCTION__+": error initializing trailing");
-      ExtExpert.Deinit();
-      return(INIT_FAILED);
-     }
-//--- Set trailing parameters
-//--- Creation of money object
-   CMoneyFixedLot *money=new CMoneyFixedLot;
-   if(money==NULL)
-     {
-      //--- failed
-      printf(__FUNCTION__+": error creating money");
-      ExtExpert.Deinit();
-      return(INIT_FAILED);
-     }
-//--- Add money to expert (will be deleted automatically))
-   if(!ExtExpert.InitMoney(money))
-     {
-      //--- failed
-      printf(__FUNCTION__+": error initializing money");
-      ExtExpert.Deinit();
-      return(INIT_FAILED);
-     }
-//--- Set money parameters
-   money.Percent(Money_FixLot_Percent);
-   money.Lots(Money_FixLot_Lots);
-//--- Check all trading objects parameters
-   if(!ExtExpert.ValidationSettings())
-     {
-      //--- failed
-      ExtExpert.Deinit();
-      return(INIT_FAILED);
-     }
-//--- Tuning of all necessary indicators
-   if(!ExtExpert.InitIndicators())
-     {
-      //--- failed
-      printf(__FUNCTION__+": error initializing indicators");
-      ExtExpert.Deinit();
-      return(INIT_FAILED);
-     }
-      adx_handle = iADX(_Symbol, _Period,adx_period);
-      cci_handle = iCCI(_Symbol, _Period,cci_period,cci_applied_price);
-   
+
       slow_ma_handle = iMA(_Symbol, _Period,ma_slow_period,0,MODE_SMA,PRICE_CLOSE);
       fast_ma_handle = iMA(_Symbol, _Period,ma_fast_period,0,MODE_SMA,PRICE_CLOSE);
+      cci_handle = iCCI(_Symbol, _Period,cci_period,cci_applied_price);
+      //--- Initializing expert
+      adx_handle = iADX(_Symbol, _Period, adx_period);
 //--- ok
-   ChartIndicatorAdd(0,0,slow_ma_handle); 
-   ChartIndicatorAdd(0,0,fast_ma_handle);
+   //ChartIndicatorAdd(0,0,slow_ma_handle); 
+   //ChartIndicatorAdd(0,0,fast_ma_handle);
    return(INIT_SUCCEEDED);
   }
 //+------------------------------------------------------------------+
@@ -179,20 +81,25 @@ int OnInit()
 void OnDeinit(const int reason)
   {
   
-   IndicatorRelease(adx_handle);
-   IndicatorRelease(cci_handle);
-   IndicatorRelease(slow_ma_handle);
-   IndicatorRelease(fast_ma_handle);
-  
-   ExtExpert.Deinit();
+      IndicatorRelease(adx_handle);
+      IndicatorRelease(cci_handle);
+      IndicatorRelease(slow_ma_handle);
+      IndicatorRelease(fast_ma_handle);
   }
 //+------------------------------------------------------------------+
 //| "Tick" event handler function                                    |
 //+------------------------------------------------------------------+
 void OnTick()
   {
+  
+   int calculated=BarsCalculated(cci_handle);
+   if(calculated<=0)
+     {
+      PrintFormat("BarsCalculated() returned %d, error code %d",calculated,GetLastError());
+      return;
+     }
    
-   int cnt, ticket, total;
+   int cnt, ticket;
    double balance = AccountInfoDouble(ACCOUNT_BALANCE);
    double equity = AccountInfoDouble(ACCOUNT_EQUITY);
    
@@ -207,10 +114,10 @@ void OnTick()
    CopyBuffer(adx_handle,0,0,4,adx_Buffer);
    CopyBuffer(cci_handle,0,0,4,cci_Buffer);
    
-   double ma_fast_value = NormalizeDouble(ma_fast_Buffer[0], 4);
-   double ma_slow_value = NormalizeDouble(ma_slow_Buffer[0], 4);
-   double adx_value     = NormalizeDouble(adx_Buffer[0]    , 4);
-   double cci_value     = NormalizeDouble(cci_Buffer[0]    , 4);
+   double ma_fast_value = NormalizeDouble(ma_fast_Buffer[0], 6);
+   double ma_slow_value = NormalizeDouble(ma_slow_Buffer[0], 6);
+   double adx_value     = NormalizeDouble(adx_Buffer[0]    , 6);
+   double cci_value     = NormalizeDouble(cci_Buffer[0]    , 6);
    
     //--- Feed candle buffers with data:
     //CopyRates(_Symbol,_Period,0,4,candle);
@@ -226,37 +133,71 @@ void OnTick()
    if(price_value>ma_fast_value &&
       price_value>ma_slow_value &&
       adx_value>25 &&
-      cci_value>100
+      cci_value>100 && 
+      price_value>iHigh(NULL,0,1) && 
+      PositionsTotal()==0
    ){
       //LONG
-      MqlTradeRequest request={0};
-      request.action=TRADE_ACTION_DEAL;         // setting a pending order
-      request.magic=Expert_MagicNumber;            // ORDER_MAGIC
-      request.symbol=Symbol();                      // symbol
-      request.volume=0.1;                          // volume in 0.1 lots
-      request.sl=0;                                // Stop Loss is not specified
-      request.tp=0;                                // Take Profit is not specified    
-      request.type=ORDER_TYPE_BUY;                        // order type 
-      request.deviation=5;                                     // allowed deviation from the price
-      request.type_filling = SYMBOL_FILLING_FOK;///
-      //--- form the order type
-      
-      //--- send a trade request
-      MqlTradeResult result={0};
-      //if(!OrderSend(request,result))
-            //PrintFormat("OrderSend error %d",GetLastError());     // if unable to send the request, output the error code
             
-      //--- information about the operation
-      PrintFormat("long: price=%.4f  ma_slow=%.4f  ma_fast=%.4f adx=%.4f cci=%.4f",ma_slow_value,ma_fast_value,adx_value,cci_value);
-      PrintFormat("retcode=%u  deal=%I64u  order=%I64u",result.retcode,result.deal,result.order);
+      ulong ticket_order=OpenOrder(Expert_MagicNumber, ORDER_TYPE_BUY,"Enter Buy");
+      PrintFormat("[EA] long #%I64d: price=%.6f  ma_slow=%.6f ma_fast=%.6f adx=%.6f cci=%.6f",ticket_order,price_value,ma_slow_value,ma_fast_value,adx_value,cci_value);
    }
 
    if(price_value<ma_fast_value &&
       price_value<ma_slow_value &&
       adx_value>25 &&
-      cci_value<-100
+      cci_value<-100 &&
+      price_value<iLow(NULL,0,1) && 
+      PositionsTotal()==0
    ){
       //SHORT
+      ulong ticket_order=OpenOrder(Expert_MagicNumber, ORDER_TYPE_SELL,"Enter Sell");
+      PrintFormat("[EA] short #%I64d: price=%.6f ma_slow=%.6f ma_fast=%.6f adx=%.6f cci=%.6f",ticket_order,price_value,ma_slow_value,ma_fast_value,adx_value,cci_value);
+
+   }
+   
+   int total_pos=PositionsTotal(); // number of open positions 
+   
+   if(total_pos!=0){
+      ClosePositions(total_pos);
+   }
+
+}
+//+------------------------------------------------------------------+
+//| "Trade" event handler function                                   |
+//+------------------------------------------------------------------+
+void OnTrade()
+  {
+
+  }
+//+------------------------------------------------------------------+
+//| "Timer" event handler function                                   |
+//+------------------------------------------------------------------+
+void OnTimer()
+  {
+
+  }
+//+------------------------------------------------------------------+
+
+double iIndicatorGet(int handle, const int index)
+  {
+   double RSI[1];
+//--- reset error code 
+   ResetLastError();
+//--- fill a part of the iRSI array with values from the indicator buffer that has 0 index 
+   if(CopyBuffer(handle,0,index,1,RSI)<0)
+     {
+      //--- if the copying fails, tell the error code 
+      PrintFormat("Failed to copy data from the indicator, error code %d",GetLastError());
+      //--- quit with zero result - it means that the indicator is considered as not calculated 
+      return(EMPTY_VALUE);
+     }
+   return(RSI[0]);
+  }
+  
+ulong OpenOrder(long const magic_number, ENUM_ORDER_TYPE typeOrder, string order_comment)
+{
+
       MqlTradeRequest request={0};
       request.action=TRADE_ACTION_DEAL;         // setting a pending order
       request.magic=Expert_MagicNumber;            // ORDER_MAGIC
@@ -264,35 +205,160 @@ void OnTick()
       request.volume=0.1;                          // volume in 0.1 lots
       request.sl=0;                                // Stop Loss is not specified
       request.tp=0;                                // Take Profit is not specified
-      request.type=ORDER_TYPE_SELL;                        // order type 
+      request.type=typeOrder;                        // order type 
       request.deviation=5;                                     // allowed deviation from the price
       request.type_filling = SYMBOL_FILLING_FOK;///
+      
+      request.comment=order_comment;
+      
       //--- form the order type
       
       //--- send a trade request
       MqlTradeResult result={0};
-      //if(!OrderSend(request,result))
-            //PrintFormat("OrderSend error %d",GetLastError());     // if unable to send the request, output the error code
-            
-      PrintFormat("short: price=%.4f  ma_slow=%.4f  ma_fast=%.4f adx=%.4f cci=%.4f",ma_slow_value,ma_fast_value,adx_value,cci_value);
-      //--- information about the operation
-      PrintFormat("retcode=%u  deal=%I64u  order=%I64u",result.retcode,result.deal,result.order);
-   }
+
+//--- reset the last error code to zero
+   ResetLastError();
+//--- send request
+   bool success=OrderSend(request,result);
+//--- if the result fails - try to find out why
+   if(!success)
+     {
+      int answer=result.retcode;
+      Print("[EA] TradeLog: Trade request failed. Error = ",GetLastError());
+      switch(answer)
+        {
+         //--- requote
+         case 10004:
+           {
+            Print("[EA] TRADE_RETCODE_REQUOTE");
+            Print("[EA] request.price = ",request.price,"   result.ask = ",
+                  result.ask," result.bid = ",result.bid);
+            break;
+           }
+         //--- order is not accepted by the server
+         case 10006:
+           {
+            Print("[EA] TRADE_RETCODE_REJECT");
+            Print("[EA] request.price = ",request.price,"   result.ask = ",
+                  result.ask," result.bid = ",result.bid);
+            break;
+           }
+         //--- invalid price
+         case 10015:
+           {
+            Print("[EA] TRADE_RETCODE_INVALID_PRICE");
+            Print("[EA] request.price = ",request.price,"   result.ask = ",
+                  result.ask," result.bid = ",result.bid);
+            break;
+           }
+         //--- invalid SL and/or TP
+         case 10016:
+           {
+            Print("[EA] TRADE_RETCODE_INVALID_STOPS");
+            Print("[EA] request.sl = ",request.sl," request.tp = ",request.tp);
+            Print("[EA] result.ask = ",result.ask," result.bid = ",result.bid);
+            break;
+           }
+         //--- invalid volume
+         case 10014:
+           {
+            Print("[EA] TRADE_RETCODE_INVALID_VOLUME");
+            Print("[EA] request.volume = ",request.volume,"   result.volume = ",
+                  result.volume);
+            break;
+           }
+         //--- not enough money for a trade operation 
+         case 10019:
+           {
+            Print("[EA] TRADE_RETCODE_NO_MONEY");
+            Print("[EA] request.volume = ",request.volume,"   result.volume = ",
+                  result.volume,"   result.comment = ",result.comment);
+            break;
+           }
+         //--- some other reason, output the server response code 
+         default:
+           {
+            Print("[EA] Other answer = ",answer);
+           }
+        }
+     }
+        
+     return result.deal;
+
+}
+
+void ClosePositions(int total_pos){
+
+   double price_value=SymbolInfoDouble(Symbol(),SYMBOL_BID); // price for opening
    
-   ExtExpert.OnTick();
+   for(int i=total_pos-1; i>=0; i--)
+   {
+   
+      ulong ticket=OrderGetTicket(i);
+      
+      //--- parameters of the order
+      ulong  position_ticket=PositionGetTicket(i);                                      // ticket of the position
+      string position_symbol=PositionGetString(POSITION_SYMBOL);                        // symbol 
+      int    digits=(int)SymbolInfoInteger(position_symbol,SYMBOL_DIGITS);              // number of decimal places
+      ulong  magic=PositionGetInteger(POSITION_MAGIC);                                  // MagicNumber of the position
+      double volume=PositionGetDouble(POSITION_VOLUME);                                 // volume of the position
+      ENUM_POSITION_TYPE type=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);    // type of the position
+      
+      
+      //--- output information about the position
+      /*
+      PrintFormat("#%I64u %s  %s  %.2f  %s [%I64d]",
+                  position_ticket,
+                  position_symbol,
+                  EnumToString(type),
+                  volume,
+                  DoubleToString(PositionGetDouble(POSITION_PRICE_OPEN),digits),
+                  magic);
+                  */
+                  
+      //--- if the MagicNumber matches
+      if(magic==Expert_MagicNumber)
+        {
+         //--- zeroing the request and result values
+         MqlTradeRequest request={0};
+         MqlTradeResult result={0};
+         ZeroMemory(request);
+         ZeroMemory(result);
+         //--- setting the operation parameters
+         request.action   = TRADE_ACTION_DEAL;        // type of trade operation
+         request.position = position_ticket;          // ticket of the position
+         request.symbol   = position_symbol;          // symbol 
+         request.volume   = volume;                   // volume of the position
+         request.deviation= 5;                        // allowed deviation from the price
+         request.magic    = Expert_MagicNumber;       // MagicNumber of the position
+         request.type_filling = SYMBOL_FILLING_FOK;///
+         //--- set the price and order type depending on the position type
+         if(type==POSITION_TYPE_BUY && price_value<iLow(NULL,0,1))
+         {
+               request.price=SymbolInfoDouble(position_symbol,SYMBOL_BID);
+               request.type =ORDER_TYPE_SELL;
+               //request.comment=StringFormat("Close long #%I64d price %f low %f", position_ticket,price_value,iLow(NULL,0,1));
+               //--- output information about the closure
+               
+               //--- send the request
+               if(!OrderSend(request,result))
+                  PrintFormat("[EA] OrderSend error %d",GetLastError());  // if unable to send the request, output the error code
+               
+               PrintFormat("[EA] Close long #%I64d price: %.6f Low: %.6f",position_ticket,price_value,iLow(NULL,0,1));
+               
+         } else if(type==POSITION_TYPE_SELL && price_value>iHigh(NULL,0,1))
+         {
+            request.price=SymbolInfoDouble(position_symbol,SYMBOL_ASK);
+            request.type =ORDER_TYPE_BUY;
+            //request.comment=StringFormat("Close short #%I64d price %f high %f", position_ticket,price_value,iHigh(NULL,0,1));
+            //--- output information about the closure
+            
+            //--- send the request
+            if(!OrderSend(request,result))
+               PrintFormat("[EA] OrderSend error %d",GetLastError());  // if unable to send the request, output the error code
+               
+            PrintFormat("[EA] Close short #%I64d price: %.6f High: %.6f",position_ticket,price_value,iHigh(NULL,0,1));
+        }        
+    }
   }
-//+------------------------------------------------------------------+
-//| "Trade" event handler function                                   |
-//+------------------------------------------------------------------+
-void OnTrade()
-  {
-   ExtExpert.OnTrade();
-  }
-//+------------------------------------------------------------------+
-//| "Timer" event handler function                                   |
-//+------------------------------------------------------------------+
-void OnTimer()
-  {
-   ExtExpert.OnTimer();
-  }
-//+------------------------------------------------------------------+
+}
