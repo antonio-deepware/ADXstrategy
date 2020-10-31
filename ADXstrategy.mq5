@@ -20,48 +20,43 @@
 //| Inputs                                                           |
 //+------------------------------------------------------------------+
 //--- inputs for expert
-input string             Expert_Title         ="ADXstrategy"; // Document name
-ulong                    Expert_MagicNumber   =26860;         //
+input string             Expert_Title         ="ADXstrategy";  // Document name
+ulong                    Expert_MagicNumber   =26860;          // Magic Namber
 
 //--- inputs for money
 input group "Money";
-input double             Money_FixLot_Percent =10.0;          // Percent
-input double             Money_FixLot_Lots    =0.1;           // Fixed volume
-input group "Custom Parameters";
-input int                adx_period           =14;
-input int                cci_period           =20;
-input int                ma_slow_period       =200;
-input int                ma_fast_period       =20;
+input double             Money_FixLot_Percent =10.0;           // Percent
+input double             Money_FixLot_Lots    =0.1;            // Fixed volume
+input group "Indicator parameters";
+input int                adx_period           =14;             // ADX period
+input int                cci_period           =20;             // CCI period
+input int                ma_slow_period       =200;            // Slow Moving Average period
+input int                ma_fast_period       =20;             // Fast Moving Average period
 input ENUM_APPLIED_PRICE cci_applied_price    =PRICE_TYPICAL;  // type of price
 
+input group "BUY conditions";
+input int                adx_limit_buy        =25;             // BUY Condition for ADX (ADX>x)
+input int                cci_limit_buy        =100;            // BUY Condition for CCI (CCI>x)
+
+
+input group "SELL conditions";
+input int                adx_limit_sell       =25;             // SELL Condition for ADX (ADX>x)
+input int                cci_limit_sell       =-100;           // SELL Condition for CCI (CCI>x)
+
+
+
 input group "Market Time";
-extern int StartTime = 7; // Time to allow trading to start
-extern int EndTime = 20; // Time to stop trading
+input int StartTime = 7;                                       // Time to allow trading to start
+input int EndTime = 20;                                        // Time to stop trading
 //+------------------------------------------------------------------+
 //| Global expert object                                             |
 //+------------------------------------------------------------------+
-CExpert ExtExpert;
-
-//--- Moving Averages
-// FAST - shorter period
-double ma_fast_Buffer[]; // Buffer Fast Moving Average
-
-// SLOW - longer period
-double ma_slow_Buffer[]; // Buffer Slow Moving Average
-
-// ADX
-double adx_Buffer[]; // ADX buffer
-
-// CCI
-double cci_Buffer[]; // ADX buffer
 
 int adx_handle;
 int cci_handle;
    
 int slow_ma_handle;
 int fast_ma_handle;
-
-
 
 //+------------------------------------------------------------------+
 //| Initialization function of the expert                            |
@@ -71,12 +66,11 @@ int OnInit()
 
       slow_ma_handle = iMA(_Symbol, _Period,ma_slow_period,0,MODE_SMA,PRICE_CLOSE);
       fast_ma_handle = iMA(_Symbol, _Period,ma_fast_period,0,MODE_SMA,PRICE_CLOSE);
+      //--- Initializing expert
       cci_handle = iCCI(_Symbol, _Period,cci_period,cci_applied_price);
       //--- Initializing expert
       adx_handle = iADX(_Symbol, _Period, adx_period);
-//--- ok
-   //ChartIndicatorAdd(0,0,slow_ma_handle); 
-   //ChartIndicatorAdd(0,0,fast_ma_handle);
+
    return(INIT_SUCCEEDED);
   }
 //+------------------------------------------------------------------+
@@ -96,12 +90,12 @@ void OnDeinit(const int reason)
 void OnTick()
   {
   
-  //MqlDateTime dt_struct;
-  //datetime dtSer=TimeCurrent(dt_struct);
-  //if((dt_struct.hour<=StartTime || dt_struct.hour>EndTime)){
-         //CloseAllPositions();
-         //return; //Preferd Trading Hours
-  //}
+  MqlDateTime dt_struct;
+  datetime dtSer=TimeCurrent(dt_struct);
+  if( (dt_struct.hour<=StartTime) || (dt_struct.hour>=EndTime) || dt_struct.day_of_week==0 /* Sunday*/|| dt_struct.day_of_week==6 /*Saturday*/){
+         CloseAllPositions();
+         return; //Preferd Trading Hours
+  }
   
    int calculated=BarsCalculated(cci_handle);
    if(calculated<=0)
@@ -114,37 +108,18 @@ void OnTick()
    double balance = AccountInfoDouble(ACCOUNT_BALANCE);
    double equity = AccountInfoDouble(ACCOUNT_EQUITY);
    
-   ArraySetAsSeries(ma_fast_Buffer, true);
-   ArraySetAsSeries(ma_slow_Buffer, true);
-   ArraySetAsSeries(adx_Buffer, true);
-   ArraySetAsSeries(cci_Buffer, true);
-   
-   CopyBuffer(fast_ma_handle,0,0,4,ma_fast_Buffer);
-   CopyBuffer(slow_ma_handle,0,0,4,ma_slow_Buffer);
-   
-   CopyBuffer(adx_handle,0,0,4,adx_Buffer);
-   CopyBuffer(cci_handle,0,0,4,cci_Buffer);
-   
-   double ma_fast_value = NormalizeDouble(ma_fast_Buffer[0], 6);
-   double ma_slow_value = NormalizeDouble(ma_slow_Buffer[0], 6);
-   double adx_value     = NormalizeDouble(adx_Buffer[0]    , 6);
-   double cci_value     = NormalizeDouble(cci_Buffer[0]    , 6);
-   
-    //--- Feed candle buffers with data:
-    //CopyRates(_Symbol,_Period,0,4,candle);
-    //ArraySetAsSeries(candle,true);
-    
-   //MqlTick Latest_Price; // Structure to get the latest prices      
-   //SymbolInfoTick(Symbol() ,Latest_Price); // Assign current prices to structure 
-   //double price_value=Latest_Price.last;
-   //double price_value=Latest_Price.bid; // depart from price Bid
+   double ma_fast_value = iIndicatorGetLast(fast_ma_handle);
+   double ma_slow_value = iIndicatorGetLast(slow_ma_handle);
+   double adx_value     = iIndicatorGetLast(adx_handle);
+   double cci_value     = iIndicatorGetLast(cci_handle);
    
    double price_value=SymbolInfoDouble(Symbol(),SYMBOL_BID); // price for opening
+
    
    if(price_value>ma_fast_value &&
       price_value>ma_slow_value &&
-      adx_value>25 &&
-      cci_value>100 && 
+      adx_value>adx_limit_buy &&
+      cci_value>cci_limit_buy && 
       price_value>iHigh(NULL,0,1) && 
       PositionsTotal()==0
    ){
@@ -156,8 +131,8 @@ void OnTick()
 
    if(price_value<ma_fast_value &&
       price_value<ma_slow_value &&
-      adx_value>25 &&
-      cci_value<-100 &&
+      adx_value>adx_limit_sell &&
+      cci_value<cci_limit_sell &&
       price_value<iLow(NULL,0,1) && 
       PositionsTotal()==0
    ){
@@ -190,30 +165,34 @@ void OnTimer()
   }
 //+------------------------------------------------------------------+
 
-double iIndicatorGet(int handle, const int index)
-  {
-   double RSI[1];
+double iIndicatorGetLast(int handle)
+{
+   double indicator_values[1];
 //--- reset error code 
    ResetLastError();
 //--- fill a part of the iRSI array with values from the indicator buffer that has 0 index 
-   if(CopyBuffer(handle,0,index,1,RSI)<0)
+   if(CopyBuffer(handle,0,0,1,indicator_values)<0)
      {
       //--- if the copying fails, tell the error code 
       PrintFormat("Failed to copy data from the indicator, error code %d",GetLastError());
       //--- quit with zero result - it means that the indicator is considered as not calculated 
       return(EMPTY_VALUE);
      }
-   return(RSI[0]);
-  }
+   return(NormalizeDouble(indicator_values[0], 6));
+}
   
 ulong OpenOrder(long const magic_number, ENUM_ORDER_TYPE typeOrder, string order_comment)
 {
+
+      double point=SymbolInfoDouble(Symbol(),SYMBOL_POINT);         // point
+      double bid=SymbolInfoDouble(Symbol(),SYMBOL_BID);             // current price for closing LONG
+      double ask=SymbolInfoDouble(Symbol(),SYMBOL_ASK);             
 
       MqlTradeRequest request={0};
       request.action=TRADE_ACTION_DEAL;         // setting a pending order
       request.magic=Expert_MagicNumber;            // ORDER_MAGIC
       request.symbol=Symbol();                      // symbol
-      request.volume=0.3;                          // volume in 0.1 lots
+      request.volume=Money_FixLot_Lots;                          // volume in 0.1 lots
       request.sl=0;                                // Stop Loss is not specified
       request.tp=0;                                // Take Profit is not specified
       request.type=typeOrder;                        // order type 
@@ -313,6 +292,7 @@ void ClosePositions(int total_pos){
       int    digits=(int)SymbolInfoInteger(position_symbol,SYMBOL_DIGITS);              // number of decimal places
       ulong  magic=PositionGetInteger(POSITION_MAGIC);                                  // MagicNumber of the position
       double volume=PositionGetDouble(POSITION_VOLUME);                                 // volume of the position
+
       ENUM_POSITION_TYPE type=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);    // type of the position
 
       //--- if the MagicNumber matches
@@ -331,6 +311,7 @@ void ClosePositions(int total_pos){
          request.deviation= 5;                        // allowed deviation from the price
          request.magic    = Expert_MagicNumber;       // MagicNumber of the position
          request.type_filling = SYMBOL_FILLING_FOK;///
+
          //--- set the price and order type depending on the position type
          if(type==POSITION_TYPE_BUY && price_value<iLow(NULL,0,1))
          {
