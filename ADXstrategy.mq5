@@ -71,7 +71,7 @@ int OnInit()
       //--- Initializing expert
       adx_handle = iADX(_Symbol, _Period, adx_period);
 
-   return(INIT_SUCCEEDED);
+      return(INIT_SUCCEEDED);
   }
 //+------------------------------------------------------------------+
 //| Deinitialization function of the expert                          |
@@ -97,6 +97,10 @@ void OnTick()
          return; //Preferd Trading Hours
   }
   
+  int digits=(int)SymbolInfoInteger(Symbol(),SYMBOL_DIGITS); // number of decimal places
+  double price_value=SymbolInfoDouble(Symbol(),SYMBOL_BID); // price for opening
+  double point=SymbolInfoDouble(Symbol(),SYMBOL_POINT);         // point value of 1 pip
+  
    int calculated=BarsCalculated(cci_handle);
    if(calculated<=0)
      {
@@ -108,37 +112,41 @@ void OnTick()
    double balance = AccountInfoDouble(ACCOUNT_BALANCE);
    double equity = AccountInfoDouble(ACCOUNT_EQUITY);
    
-   double ma_fast_value = iIndicatorGetLast(fast_ma_handle);
-   double ma_slow_value = iIndicatorGetLast(slow_ma_handle);
-   double adx_value     = iIndicatorGetLast(adx_handle);
-   double cci_value     = iIndicatorGetLast(cci_handle);
-   
-   double price_value=SymbolInfoDouble(Symbol(),SYMBOL_BID); // price for opening
+   double ma_fast_value = iIndicatorGetLast(fast_ma_handle,1,digits);
+   double ma_slow_value = iIndicatorGetLast(slow_ma_handle,1,digits);
+   double adx_value     = iIndicatorGetLast(adx_handle,1,digits);
+   double cci_value     = iIndicatorGetLast(cci_handle,1,digits);
 
-   
    if(price_value>ma_fast_value &&
-      price_value>ma_slow_value &&
+      price_value>ma_slow_value+100*point &&
       adx_value>adx_limit_buy &&
       cci_value>cci_limit_buy && 
       price_value>iHigh(NULL,0,1) && 
       PositionsTotal()==0
    ){
       //LONG
+      
+      double sl=iLow(NULL,0,1);
+      double tp = price_value+(((int)((price_value - sl)/point)*2)*point);
             
-      ulong ticket_order=OpenOrder(Expert_MagicNumber, ORDER_TYPE_BUY,"Enter Buy");
-      PrintFormat("[EA] long #%I64d: price=%.6f  ma_slow=%.6f ma_fast=%.6f adx=%.6f cci=%.6f",ticket_order,price_value,ma_slow_value,ma_fast_value,adx_value,cci_value);
+      ulong ticket_order=OpenOrder(Expert_MagicNumber, ORDER_TYPE_BUY,sl,tp,"[EA] Enter Buy");
+      PrintFormat("[EA] long #%I64d: price=%.6f  ma_slow=%.6f ma_fast=%.6f adx=%.6f cci=%.6f sl=%f tp=%f",ticket_order,price_value,ma_slow_value,ma_fast_value,adx_value,cci_value,sl,tp);
    }
 
    if(price_value<ma_fast_value &&
-      price_value<ma_slow_value &&
+      price_value<ma_slow_value-100*point &&
       adx_value>adx_limit_sell &&
       cci_value<cci_limit_sell &&
       price_value<iLow(NULL,0,1) && 
       PositionsTotal()==0
    ){
       //SHORT
-      ulong ticket_order=OpenOrder(Expert_MagicNumber, ORDER_TYPE_SELL,"Enter Sell");
-      PrintFormat("[EA] short #%I64d: price=%.6f ma_slow=%.6f ma_fast=%.6f adx=%.6f cci=%.6f",ticket_order,price_value,ma_slow_value,ma_fast_value,adx_value,cci_value);
+      
+      double sl=iHigh(NULL,0,1);
+      double tp = price_value-(((int)((sl - price_value)/point)*2)*point);
+      
+      ulong ticket_order=OpenOrder(Expert_MagicNumber, ORDER_TYPE_SELL,sl,tp,"[EA] Enter Sell");
+      PrintFormat("[EA] short #%I64d: price=%.6f ma_slow=%.6f ma_fast=%.6f adx=%.6f cci=%.6f sl=%f tp=%f",ticket_order,price_value,ma_slow_value,ma_fast_value,adx_value,cci_value,sl,tp);
 
    }
    
@@ -165,23 +173,23 @@ void OnTimer()
   }
 //+------------------------------------------------------------------+
 
-double iIndicatorGetLast(int handle)
+double iIndicatorGetLast(int handle,int index, int digits)
 {
-   double indicator_values[1];
+   double indicator_values[];
 //--- reset error code 
    ResetLastError();
 //--- fill a part of the iRSI array with values from the indicator buffer that has 0 index 
-   if(CopyBuffer(handle,0,0,1,indicator_values)<0)
+   if(CopyBuffer(handle,0,0,index+1,indicator_values)<0)
      {
       //--- if the copying fails, tell the error code 
       PrintFormat("Failed to copy data from the indicator, error code %d",GetLastError());
       //--- quit with zero result - it means that the indicator is considered as not calculated 
       return(EMPTY_VALUE);
      }
-   return(NormalizeDouble(indicator_values[0], 6));
+   return(NormalizeDouble(indicator_values[index], digits));
 }
   
-ulong OpenOrder(long const magic_number, ENUM_ORDER_TYPE typeOrder, string order_comment)
+ulong OpenOrder(long const magic_number, ENUM_ORDER_TYPE typeOrder, double sl, double tp, string order_comment)
 {
 
       double point=SymbolInfoDouble(Symbol(),SYMBOL_POINT);         // point
@@ -193,8 +201,8 @@ ulong OpenOrder(long const magic_number, ENUM_ORDER_TYPE typeOrder, string order
       request.magic=Expert_MagicNumber;            // ORDER_MAGIC
       request.symbol=Symbol();                      // symbol
       request.volume=Money_FixLot_Lots;                          // volume in 0.1 lots
-      request.sl=0;                                // Stop Loss is not specified
-      request.tp=0;                                // Take Profit is not specified
+      request.sl=sl;                                // Stop Loss is not specified
+      request.tp=tp;                                // Take Profit is not specified
       request.type=typeOrder;                        // order type 
       request.deviation=5;                                     // allowed deviation from the price
       request.type_filling = SYMBOL_FILLING_FOK;///
